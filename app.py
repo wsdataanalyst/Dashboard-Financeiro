@@ -1,6 +1,6 @@
 """
 Dashboard Financeiro e Resultados - Sistema de Cobrança
-Versão 3.2 - Melhorias visuais (contraste, fontes maiores) + Exportação Excel
+Versão 3.2.1 - Ajuste de caminhos para deploy no Streamlit Cloud
 """
 
 import streamlit as st
@@ -19,33 +19,28 @@ st.set_page_config(page_title="Dashboard Financeiro", page_icon="💰", layout="
 # --- ESTILO CSS GLOBAL PARA AUMENTAR FONTES E MELHORAR APARÊNCIA ---
 st.markdown("""
 <style>
-    /* Aumenta fonte geral da página */
     html, body, [class*="css"]  {
         font-size: 18px;
     }
-    /* Títulos maiores */
     h1 { font-size: 2.5rem !important; }
     h2 { font-size: 2rem !important; }
     h3 { font-size: 1.6rem !important; }
-    /* Métricas (st.metric) maiores */
     [data-testid="stMetricValue"] {
         font-size: 2rem !important;
     }
     [data-testid="stMetricLabel"] {
         font-size: 1.1rem !important;
     }
-    /* Botões maiores */
     .stButton button {
         font-size: 1.1rem !important;
         padding: 0.5rem 1rem !important;
     }
-    /* Cards personalizados para assistentes (usando metric) também ficam maiores */
 </style>
 """, unsafe_allow_html=True)
 
-DB_PATH = "data/cobranca.db"
-UPLOAD_FOLDER = "data/uploads"
-os.makedirs("data", exist_ok=True)
+# ---------- CAMINHOS AJUSTADOS PARA STREAMLIT CLOUD ----------
+DB_PATH = "/tmp/cobranca.db"          # Usa diretório temporário (permitido no Cloud)
+UPLOAD_FOLDER = "/tmp/uploads"        # Pasta para uploads também em /tmp
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Mapeamento de status
@@ -58,7 +53,7 @@ STATUS_MAP = {
 }
 STATUS_REVERSE = {v: k for k, v in STATUS_MAP.items()}
 
-# ---------- BANCO DE DADOS (ATUALIZADO) ----------
+# ---------- BANCO DE DADOS ----------
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -354,7 +349,6 @@ if st.session_state.perfil == "admin":
             st.info("Sem dados.")
             st.stop()
 
-        # ---- Cards estilizados com alto contraste ----
         total_clientes = len(df)
         total_valor = df['valor_atualizado'].sum()
         inad_valor = df[df['tempo_atraso'] > 0]['valor_atualizado'].sum()
@@ -386,7 +380,6 @@ if st.session_state.perfil == "admin":
             </div>
             """, unsafe_allow_html=True)
 
-        # ---- Status com valor total (cards) ----
         st.subheader("📈 Status das Tratativas (Global)")
         status_list = ['pendente', 'em_tratativa', 'contatado_sem_exito', 'acordo_finalizado', 'acordo_pendente']
         cols = st.columns(len(status_list))
@@ -397,7 +390,6 @@ if st.session_state.perfil == "admin":
             with cols[i]:
                 st.metric(STATUS_MAP[status], f"{qtd} clientes", f"R$ {valor:,.2f}")
 
-        # ---- Gráficos e insights adicionais ----
         st.subheader("📊 Análise Comparativa por Assistente")
         df_assistente = df.groupby('assistente_responsavel').agg(
             Valor_Total=('valor_atualizado', 'sum'),
@@ -411,7 +403,6 @@ if st.session_state.perfil == "admin":
                      labels={'Valor_Total': 'Valor Total (R$)', 'assistente_responsavel': 'Assistente'})
         st.plotly_chart(fig, use_container_width=True)
 
-        # Top 5 motivos de atraso
         st.subheader("🔍 Principais Motivos de Atraso")
         motivos = df['observacao'].dropna().str.extract(r'^([^:]+):')
         if not motivos.empty:
@@ -421,7 +412,6 @@ if st.session_state.perfil == "admin":
         else:
             st.info("Ainda não há dados de motivos registrados.")
 
-        # Pagamentos programados (próximos 30 dias)
         st.subheader("📅 Pagamentos Programados (Próximos 30 dias)")
         if 'data_pagamento_programado' in df.columns:
             df['data_pagamento_programado'] = pd.to_datetime(df['data_pagamento_programado'], errors='coerce')
@@ -437,7 +427,6 @@ if st.session_state.perfil == "admin":
         else:
             st.info("Nenhum pagamento programado registrado.")
 
-        # Top 10 inadimplentes
         st.subheader("🔴 Top 10 Inadimplentes")
         top_inad = df.nlargest(10, 'valor_atualizado')[['razao_social', 'valor_atualizado', 'tempo_atraso', 'assistente_responsavel']]
         st.dataframe(top_inad, use_container_width=True)
@@ -482,7 +471,6 @@ if st.session_state.perfil == "admin":
         if df_export.empty:
             st.warning("Ainda não há dados para exportar.")
         else:
-            # Converter para Excel
             from io import BytesIO
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -508,7 +496,6 @@ else:
             st.info("Nenhum cliente atribuído.")
             st.stop()
 
-        # --- Cards de status clicáveis (melhorados) ---
         st.subheader("📊 Status das Tratativas")
         status_list = ['pendente', 'em_tratativa', 'contatado_sem_exito', 'acordo_finalizado', 'acordo_pendente']
         cols = st.columns(len(status_list))
@@ -550,7 +537,6 @@ else:
         else:
             df_filtrado = df_clientes
 
-        # --- Lista de clientes (filtrada) ---
         st.subheader("📋 Lista de Clientes")
         if not df_filtrado.empty:
             codigos = df_filtrado['codigo_cliente'].tolist()
@@ -587,7 +573,6 @@ else:
                             if 'data_pagamento_programado' in cliente and cliente['data_pagamento_programado']:
                                 st.write(f"**Pagamento Programado:** {cliente['data_pagamento_programado']}")
 
-                    # --- Ações conforme status ---
                     if status_atual == 'pendente':
                         if st.button("🔔 Pegar para Tratativa"):
                             if atualizar_status_cliente(cliente_id, 'em_tratativa', f"Pego por {st.session_state.usuario}", st.session_state.usuario):
@@ -626,7 +611,6 @@ else:
                                 else:
                                     st.error("Descreva o motivo da reabertura.")
 
-                    # Histórico
                     st.subheader("📜 Histórico")
                     conn = sqlite3.connect(DB_PATH)
                     hist = pd.read_sql_query(
@@ -651,13 +635,11 @@ else:
         df_global = pd.read_sql_query("SELECT * FROM clientes", conn)
         conn.close()
 
-        # Indicador global
         total_global = df_global['valor_atualizado'].sum()
         inad_global = df_global[df_global['tempo_atraso'] > 0]['valor_atualizado'].sum()
         percent_global = (inad_global / total_global * 100) if total_global else 0
         st.metric("🌍 Inadimplência Global", f"{percent_global:.2f}%", delta="Meta ≤3%" if percent_global <=3 else "Acima da meta")
 
-        # Métricas individuais
         total_ind = df_clientes['valor_atualizado'].sum()
         inad_ind = df_clientes[df_clientes['tempo_atraso'] > 0]['valor_atualizado'].sum()
         percent_ind = (inad_ind / total_ind * 100) if total_ind else 0
@@ -666,7 +648,6 @@ else:
         col2.metric("Minha Inadimplência", f"{percent_ind:.2f}%")
         col3.metric("Clientes em Atraso", len(df_clientes[df_clientes['tempo_atraso'] > 0]))
 
-        # Cards de status (melhorados)
         st.subheader("📊 Status das Minhas Tratativas")
         status_list = ['pendente', 'em_tratativa', 'contatado_sem_exito', 'acordo_finalizado', 'acordo_pendente']
         cols = st.columns(len(status_list))
@@ -691,7 +672,6 @@ else:
                 """
                 st.markdown(card_html, unsafe_allow_html=True)
 
-        # Pagamentos programados
         st.subheader("📅 Meus Pagamentos Programados")
         if 'data_pagamento_programado' in df_clientes.columns:
             df_clientes['data_pagamento_programado'] = pd.to_datetime(df_clientes['data_pagamento_programado'], errors='coerce')
@@ -707,7 +687,6 @@ else:
         else:
             st.info("Nenhum pagamento programado registrado.")
 
-        # Gráfico de pizza
         st.subheader("Distribuição")
         status_counts = df_clientes['status_tratativa'].value_counts().reset_index()
         status_counts.columns = ['Status', 'Quantidade']
@@ -715,10 +694,9 @@ else:
         fig = px.pie(status_counts, names='Status', values='Quantidade', hole=0.4)
         st.plotly_chart(fig, use_container_width=True)
 
-        # Top 5 inadimplentes
         st.subheader("🔴 Meus Top 5 Inadimplentes")
         top5 = df_clientes.nlargest(5, 'valor_atualizado')[['razao_social', 'valor_atualizado', 'tempo_atraso']]
         st.dataframe(top5, use_container_width=True)
 
 st.sidebar.markdown("---")
-st.sidebar.caption("Dashboard Financeiro v3.2")
+st.sidebar.caption("Dashboard Financeiro v3.2.1")
